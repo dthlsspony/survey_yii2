@@ -2,103 +2,121 @@
 
 namespace app\models;
 
-class User extends \yii\base\BaseObject implements \yii\web\IdentityInterface
-{
-    public $id;
-    public $username;
-    public $password;
-    public $authKey;
-    public $accessToken;
+use Yii;
 
-    private static $users = [
-        '100' => [
-            'id' => '100',
-            'username' => 'admin',
-            'password' => 'admin',
-            'authKey' => 'test100key',
-            'accessToken' => '100-token',
-        ],
-        '101' => [
-            'id' => '101',
-            'username' => 'demo',
-            'password' => 'demo',
-            'authKey' => 'test101key',
-            'accessToken' => '101-token',
-        ],
+/**
+ * This is the model class for table "users".
+ *
+ * @property int $id
+ * @property string|null $username
+ * @property string|null $password
+ * @property string|null $fio
+ * @property string|null $email
+ * @property string|null $blocked
+ * @property string|null $roles
+ * @property string $created_at
+ * @property string $updates_at
+ */
+class User extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
+{
+    static $rolesList = [
+        'Администратор системы',
+        'Администратор опроса',
+        'Оператор опроса'
     ];
 
+    /**
+     * {@inheritdoc}
+     */
+    public static function tableName()
+    {
+        return 'users';
+    }
 
     /**
      * {@inheritdoc}
      */
+    public function rules()
+    {
+        return [
+            [['blocked', 'created_at', 'updates_at', 'remember_me', 'roles'], 'safe'],
+            [['username', 'password', 'email'], 'string', 'max' => 100],
+            [['fio'], 'string', 'max' => 250]
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function attributeLabels()
+    {
+        return [
+            'id' => 'ID',
+            'username' => 'Логин',
+            'password' => 'Пароль',
+            'fio' => 'ФИО',
+            'email' => 'Электронная почта',
+            'blocked' => 'Заблокировать',
+            'roles' => 'Роли',
+            'created_at' => 'Created At',
+            'updates_at' => 'Updates At',
+        ];
+    }
+
     public static function findIdentity($id)
     {
-        return isset(self::$users[$id]) ? new static(self::$users[$id]) : null;
+        return static::findOne($id);
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public static function findIdentityByAccessToken($token, $type = null)
+    public function validatePassword($password)
     {
-        foreach (self::$users as $user) {
-            if ($user['accessToken'] === $token) {
-                return new static($user);
-            }
-        }
-
-        return null;
+        return true;
     }
 
-    /**
-     * Finds user by username
-     *
-     * @param string $username
-     * @return static|null
-     */
     public static function findByUsername($username)
     {
-        foreach (self::$users as $user) {
-            if (strcasecmp($user['username'], $username) === 0) {
-                return new static($user);
-            }
-        }
-
-        return null;
+        return self::findOne(['username' => $username, 'blocked' => null]);
     }
 
-    /**
-     * {@inheritdoc}
-     */
+    public static function findIdentityByAccessToken($token, $type = null)
+    {
+        return static::findOne(['token' => $token]);
+    }
+
     public function getId()
     {
         return $this->id;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function getAuthKey()
     {
-        return $this->authKey;
+        if (!$this->token) {
+            $this->token = \Yii::$app->security->generateRandomString();
+            $this->save();
+        }
+
+        return $this->token;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function validateAuthKey($authKey)
     {
-        return $this->authKey === $authKey;
+        return $authKey == $this->getAuthKey();
     }
 
-    /**
-     * Validates password
-     *
-     * @param string $password password to validate
-     * @return bool if password provided is valid for current user
-     */
-    public function validatePassword($password)
+    public function beforeSave($insert)
     {
-        return $this->password === $password;
+        if (is_array($this->roles)) {
+            $this->roles = implode(',', $this->roles);
+        }
+        if ($this->password !== $this->getOldAttribute('password')) {
+            $this->password = \Yii::$app->security->generatePasswordHash($this->password);
+        }
+        if ($this->blocked && $this->blocked != 0) {
+            $this->blocked = time();
+        } else {
+            $this->blocked = null;
+        }
+        return parent::beforeSave($insert);
     }
+
 }
